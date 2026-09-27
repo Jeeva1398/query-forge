@@ -25,4 +25,5 @@ export const db = {
   run: (sql) => send('run', { sql }),
   reset: (seed) => send('reset', { seed }),
   explain: (sql) => send('explain', { sql }),
+  schema: () => send('schema'),
 };

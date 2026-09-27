@@ -52,10 +52,73 @@ async function explain({ sql }) {
   return { plan: res.rows.map((r) => r['QUERY PLAN']).join('\n') };
 }
 
+const COLUMNS_SQL = `
+  SELECT c.table_name, c.column_name, c.data_type, c.is_nullable = 'YES' AS nullable
+  FROM information_schema.columns c
+  JOIN information_schema.tables t
+    ON t.table_schema = c.table_schema AND t.table_name = c.table_name
+  WHERE c.table_schema = 'public' AND t.table_type = 'BASE TABLE'
+  ORDER BY c.table_name, c.ordinal_position`;
+
+const KEYS_SQL = `
+  SELECT
+    con.contype AS kind,
+    rel.relname AS table_name,
+    att.attname AS column_name,
+    frel.relname AS ref_table,
+    fatt.attname AS ref_column
+  FROM pg_constraint con
+  JOIN pg_class rel ON rel.oid = con.conrelid
+  JOIN pg_namespace ns ON ns.oid = rel.relnamespace
+  CROSS JOIN LATERAL unnest(con.conkey) WITH ORDINALITY AS k(attnum, pos)
+  JOIN pg_attribute att ON att.attrelid = rel.oid AND att.attnum = k.attnum
+  LEFT JOIN pg_class frel ON frel.oid = con.confrelid
+  LEFT JOIN pg_attribute fatt
+    ON fatt.attrelid = con.confrelid AND fatt.attnum = con.confkey[k.pos]
+  WHERE ns.nspname = 'public' AND con.contype IN ('p', 'f')`;
+
+async function schema() {
+  const [cols, keys] = await Promise.all([
+    db.query(COLUMNS_SQL),
+    db.query(KEYS_SQL),
+  ]);
+
+  const tables = new Map();
+  for (const c of cols.rows) {
+    if (!tables.has(c.table_name)) {
+      tables.set(c.table_name, { name: c.table_name, columns: [] });
+    }
+    tables.get(c.table_name).columns.push({
+      name: c.column_name,
+      type: c.data_type,
+      nullable: c.nullable,
+    });
+  }
+
+  for (const k of keys.rows) {
+    const col = tables
+      .get(k.table_name)
+      ?.columns.find((c) => c.name === k.column_name);
+    if (!col) continue;
+    if (k.kind === 'p') col.pk = true;
+    else col.fk = { table: k.ref_table, column: k.ref_column };
+  }
+
+  for (const table of tables.values()) {
+    const res = await db.query(
+      `SELECT count(*)::int AS n FROM "${table.name.replace(/"/g, '""')}"`,
+    );
+    table.rowCount = res.rows[0].n;
+  }
+
+  return { tables: [...tables.values()] };
+}
+
 const handlers = {
   reset: ({ seed }) => open(seed).then(() => ({ ok: true })),
   run,
   explain,
+  schema,
 };
 
 self.onmessage = ({ data }) => {

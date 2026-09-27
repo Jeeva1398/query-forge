@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { EditorView, basicSetup } from 'codemirror';
 import { keymap } from '@codemirror/view';
-import { Prec } from '@codemirror/state';
+import { Compartment, Prec } from '@codemirror/state';
 import { sql, PostgreSQL } from '@codemirror/lang-sql';
 import { HighlightStyle, syntaxHighlighting } from '@codemirror/language';
 import { tags as t } from '@lezer/highlight';
@@ -33,8 +33,23 @@ const theme = EditorView.theme({
   '&.cm-focused': { outline: 'none' },
 });
 
-export default function SqlEditor({ value, onChange, onRun }) {
+// table name -> column names, used for autocompletion
+function toCompletionSchema(tables) {
+  return Object.fromEntries(
+    (tables || []).map((t) => [t.name, t.columns.map((c) => c.name)]),
+  );
+}
+
+const sqlLanguage = (tables) =>
+  sql({
+    dialect: PostgreSQL,
+    upperCaseKeywords: true,
+    schema: toCompletionSchema(tables),
+  });
+
+export default function SqlEditor({ value, onChange, onRun, tables }) {
   const host = useRef(null);
+  const language = useRef(new Compartment());
   const view = useRef(null);
   const handlers = useRef({ onChange, onRun });
 
@@ -59,7 +74,7 @@ export default function SqlEditor({ value, onChange, onRun }) {
           ]),
         ),
         basicSetup,
-        sql({ dialect: PostgreSQL, upperCaseKeywords: true }),
+        language.current.of(sqlLanguage(tables)),
         syntaxHighlighting(highlight),
         theme,
         EditorView.updateListener.of((u) => {
@@ -81,6 +96,12 @@ export default function SqlEditor({ value, onChange, onRun }) {
       });
     }
   }, [value]);
+
+  useEffect(() => {
+    view.current?.dispatch({
+      effects: language.current.reconfigure(sqlLanguage(tables)),
+    });
+  }, [tables]);
 
   return <div className="editor" ref={host} />;
 }
