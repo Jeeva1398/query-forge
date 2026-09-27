@@ -10,6 +10,13 @@
     "lint": "eslint ."
   },
   "dependencies": {
+    "@codemirror/lang-sql": "^6.10.0",
+    "@codemirror/language": "^6.12.4",
+    "@codemirror/state": "^6.7.6",
+    "@codemirror/view": "^6.43.13",
+    "@electric-sql/pglite": "^0.5.8",
+    "@lezer/highlight": "^1.2.4",
+    "codemirror": "^6.0.2",
     "react": "^19.3.0",
     "react-dom": "^19.3.0"
   },
