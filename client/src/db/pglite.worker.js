@@ -2,13 +2,27 @@ import { PGlite } from '@electric-sql/pglite';
 
 const MAX_ROWS = 1000;
 
+// Keep dates and times as Postgres prints them. JS Dates would shift
+// `timestamp` values into the browser's time zone and change the day.
+const asText = (value) => value;
+const TEXT_TYPES = {
+  1082: asText, // date
+  1083: asText, // time
+  1114: asText, // timestamp
+  1184: asText, // timestamptz
+  1186: asText, // interval
+  1266: asText, // timetz
+};
+
 let db = null;
 let queue = Promise.resolve();
 
 async function open(seed) {
   if (db) await db.close();
-  db = new PGlite();
+  db = new PGlite({ parsers: TEXT_TYPES });
   await db.waitReady;
+  // same results on every machine, whatever the browser's time zone
+  await db.exec("SET TIME ZONE 'UTC'");
   if (seed) await db.exec(seed);
 }
 
