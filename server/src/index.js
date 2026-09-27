@@ -1,18 +1,21 @@
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
-
-const PORT = Number(process.env.PORT) || 7100;
-const CLIENT_ORIGIN = process.env.CLIENT_ORIGIN || 'http://localhost:5173';
+import { config } from './config.js';
+import { llmStatus } from './llm.js';
 
 const app = express();
 
 app.use(helmet());
-app.use(cors({ origin: CLIENT_ORIGIN }));
+app.use(cors({ origin: config.clientOrigin }));
 app.use(express.json({ limit: '200kb' }));
 
 app.get('/api/health', (req, res) => {
   res.json({ ok: true });
+});
+
+app.get('/api/ai/status', (req, res) => {
+  res.json(llmStatus());
 });
 
 app.use('/api', (req, res) => {
@@ -20,10 +23,16 @@ app.use('/api', (req, res) => {
 });
 
 app.use((err, req, res, next) => {
-  console.error(err);
-  res.status(err.status || 500).json({ error: 'server_error' });
+  const status = err.status || 500;
+  if (status >= 500) console.error(err);
+  if (err.retryAfter) res.set('Retry-After', String(err.retryAfter));
+  res.status(status).json({
+    error: err.code || (status === 400 ? 'bad_request' : 'server_error'),
+    message: status < 500 || err.code ? err.message : 'Something went wrong.',
+    ...(err.retryAfter ? { retryAfter: err.retryAfter } : {}),
+  });
 });
 
-app.listen(PORT, () => {
-  console.log(`server listening on http://localhost:${PORT}`);
+app.listen(config.port, () => {
+  console.log(`server listening on http://localhost:${config.port}`);
 });
