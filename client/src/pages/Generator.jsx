@@ -24,6 +24,7 @@ export default function Generator({
   refreshSchema,
   sql,
   setSql,
+  onHistory,
 }) {
   const [prompt, setPrompt] = useState('');
   const [aiBusy, setAiBusy] = useState(false);
@@ -40,7 +41,8 @@ export default function Generator({
   const [pending, setPending] = useState(null);
 
   const execute = useCallback(
-    async (text) => {
+    // meta: the prompt and model when the query came from the AI
+    async (text, meta = {}) => {
       setPending(null);
       setExplain(null);
       setRunning(true);
@@ -48,6 +50,9 @@ export default function Generator({
       try {
         const res = await db.run(text);
         setResult(res);
+        const { skipHistory, ...info } = meta;
+        if (!skipHistory)
+          onHistory({ dataset: dataset.id, sql: text, ...info });
         // anything other than a plain SELECT may have changed tables or row counts
         if (res.command !== 'SELECT' || res.statements > 1) {
           await refreshSchema();
@@ -59,7 +64,7 @@ export default function Generator({
         setRunning(false);
       }
     },
-    [refreshSchema],
+    [refreshSchema, onHistory, dataset.id],
   );
 
   const run = useCallback(
@@ -88,8 +93,14 @@ export default function Generator({
       setAnswer({ kind: 'generate', prompt: request, ...res });
       setFixCount(0);
       setSql(res.data.sql);
-      if (isReadOnly(res.data.sql)) execute(res.data.sql);
+      const meta = {
+        prompt: request,
+        model: res.meta.model,
+        tier: res.meta.tier,
+      };
+      if (isReadOnly(res.data.sql)) execute(res.data.sql, meta);
       else {
+        onHistory({ dataset: dataset.id, sql: res.data.sql, ...meta });
         setResult(null);
         setError(null);
       }
@@ -134,7 +145,12 @@ export default function Generator({
         meta: res.meta,
       });
       setSql(res.data.sql);
-      if (isReadOnly(res.data.sql)) execute(res.data.sql);
+      const meta = {
+        prompt: answer?.prompt,
+        model: res.meta.model,
+        tier: res.meta.tier,
+      };
+      if (isReadOnly(res.data.sql)) execute(res.data.sql, meta);
       else setError(null);
     } catch (err) {
       setAiError(err);
@@ -167,7 +183,7 @@ export default function Generator({
   function queryTable(name) {
     const text = `SELECT *\nFROM ${name}\nLIMIT 50;\n`;
     setSql(text);
-    run(text);
+    execute(text, { skipHistory: true });
   }
 
   return (

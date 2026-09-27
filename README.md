@@ -20,7 +20,7 @@ Needs Node 20+.
 ```bash
 # server (port 7100)
 cd server
-cp .env.example .env
+cp .env.example .env   # then paste your Gemini API key (free at aistudio.google.com)
 npm install
 npm run dev
 

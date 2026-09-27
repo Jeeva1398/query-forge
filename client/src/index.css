@@ -525,3 +525,84 @@ button.tab.active {
   background: var(--active-line);
   border-radius: 6px;
 }
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  flex-wrap: wrap;
+}
+
+.count {
+  margin-left: 6px;
+  font-size: 11px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--active-line);
+  color: var(--muted);
+}
+
+.history {
+  max-width: 960px;
+}
+
+.history-bar {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.history-bar input {
+  flex: 1;
+  min-width: 200px;
+  font: inherit;
+  padding: 6px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--fg);
+}
+
+.history-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.history-item {
+  padding: 12px 14px;
+}
+
+.history-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 4px 12px;
+  flex-wrap: wrap;
+}
+
+.history-sql {
+  font-family: var(--mono);
+  font-size: 12px;
+  margin: 8px 0;
+  padding: 8px 10px;
+  background: var(--active-line);
+  border-radius: 6px;
+  max-height: 7.5em;
+  overflow: hidden;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.history-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.empty {
+  padding: 24px 0;
+}

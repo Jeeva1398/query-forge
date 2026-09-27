@@ -2,7 +2,9 @@ import { useCallback, useEffect, useState } from 'react';
 import { db } from './db/client.js';
 import { DATASETS, findDataset } from './data/samples/index.js';
 import { load, save } from './lib/storage.js';
+import { useHistory } from './lib/useHistory.js';
 import Generator from './pages/Generator.jsx';
+import History from './pages/History.jsx';
 
 export default function App() {
   const [datasetId, setDatasetId] = useState(
@@ -14,6 +16,8 @@ export default function App() {
   const [dbError, setDbError] = useState(null);
   // bumped on every (re)load so the pages start fresh
   const [loadCount, setLoadCount] = useState(0);
+  const [page, setPage] = useState('generator');
+  const history = useHistory();
 
   const refreshSchema = useCallback(async () => {
     const { tables } = await db.schema();
@@ -50,10 +54,39 @@ export default function App() {
     loadDataset(id);
   }
 
+  function openFromHistory(entry) {
+    if (entry.dataset !== datasetId) pickDataset(entry.dataset);
+    setSql(entry.sql);
+    setPage('generator');
+  }
+
   return (
     <div className="app">
       <header className="topbar">
-        <h1>Query Forge</h1>
+        <div className="brand">
+          <h1>Query Forge</h1>
+          <nav className="tabs" aria-label="Pages">
+            <button
+              type="button"
+              className={page === 'generator' ? 'tab active' : 'tab'}
+              aria-current={page === 'generator' ? 'page' : undefined}
+              onClick={() => setPage('generator')}
+            >
+              Generator
+            </button>
+            <button
+              type="button"
+              className={page === 'history' ? 'tab active' : 'tab'}
+              aria-current={page === 'history' ? 'page' : undefined}
+              onClick={() => setPage('history')}
+            >
+              History
+              {history.entries.length > 0 && (
+                <span className="count">{history.entries.length}</span>
+              )}
+            </button>
+          </nav>
+        </div>
         <div className="actions">
           <label className="field">
             <span className="muted">Dataset</span>
@@ -89,15 +122,28 @@ export default function App() {
         </div>
       )}
 
-      <Generator
-        key={loadCount}
-        dataset={findDataset(datasetId)}
-        tables={tables}
-        dbReady={dbReady}
-        refreshSchema={refreshSchema}
-        sql={sql}
-        setSql={setSql}
-      />
+      {page === 'history' && (
+        <History
+          entries={history.entries}
+          onOpen={openFromHistory}
+          onRemove={history.remove}
+          onClear={history.clear}
+        />
+      )}
+
+      {/* kept mounted while on History so results and the editor survive */}
+      <div hidden={page !== 'generator'}>
+        <Generator
+          key={loadCount}
+          onHistory={history.add}
+          dataset={findDataset(datasetId)}
+          tables={tables}
+          dbReady={dbReady}
+          refreshSchema={refreshSchema}
+          sql={sql}
+          setSql={setSql}
+        />
+      </div>
     </div>
   );
 }
