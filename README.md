@@ -15,4 +15,19 @@ Every query runs in the browser on [PGlite](https://pglite.dev), which is real P
 
 ## Running it
 
-Coming soon.
+Needs Node 20+.
+
+```bash
+# server (port 7100)
+cd server
+cp .env.example .env
+npm install
+npm run dev
+
+# client (port 5173), in another terminal
+cd client
+npm install
+npm run dev
+```
+
+Open http://localhost:5173. The client proxies `/api` to the server.
