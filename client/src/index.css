@@ -316,3 +316,123 @@ button.link.small {
     max-height: 260px;
   }
 }
+
+.ask textarea {
+  display: block;
+  width: 100%;
+  border: none;
+  resize: vertical;
+  padding: 12px;
+  font: inherit;
+  font-size: 15px;
+  background: var(--surface);
+  color: var(--fg);
+  min-height: 60px;
+}
+
+.ask textarea:focus {
+  outline: none;
+}
+
+.ask .toolbar {
+  flex-wrap: wrap;
+}
+
+.ask .error,
+.panel > .error {
+  margin: 0 10px 10px;
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-left: auto;
+}
+
+button.chip {
+  font-size: 12px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  color: var(--muted);
+}
+
+button.chip:hover:not(:disabled) {
+  color: var(--fg);
+  border-color: var(--accent);
+}
+
+button.danger {
+  background: var(--error);
+  border-color: var(--error);
+  color: var(--surface);
+  font-weight: 600;
+}
+
+.answer {
+  padding: 12px 14px;
+}
+
+.answer p {
+  margin: 8px 0 0;
+  line-height: 1.5;
+}
+
+.answer-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.assumptions {
+  margin: 8px 0 0;
+  padding-left: 18px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.badge {
+  font-size: 12px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  white-space: nowrap;
+  cursor: help;
+}
+
+.badge-flash {
+  color: var(--syn-number);
+  border-color: var(--syn-number);
+}
+
+.confirm {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 12px 14px;
+  border: 1px solid var(--error);
+  background: var(--error-bg);
+  border-radius: 8px;
+  font-size: 14px;
+}
+
+.confirm ul {
+  margin: 6px 0;
+  padding-left: 18px;
+  font-family: var(--mono);
+  font-size: 13px;
+}
+
+.confirm-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.app > .error {
+  margin-bottom: 12px;
+}

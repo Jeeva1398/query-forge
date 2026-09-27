@@ -3,6 +3,7 @@ import cors from 'cors';
 import helmet from 'helmet';
 import { config } from './config.js';
 import { llmStatus } from './llm.js';
+import { aiRoutes } from './routes/ai.js';
 
 const app = express();
 
@@ -17,6 +18,8 @@ app.get('/api/health', (req, res) => {
 app.get('/api/ai/status', (req, res) => {
   res.json(llmStatus());
 });
+
+app.use('/api', aiRoutes);
 
 app.use('/api', (req, res) => {
   res.status(404).json({ error: 'not_found' });

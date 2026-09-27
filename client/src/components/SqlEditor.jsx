@@ -77,6 +77,7 @@ export default function SqlEditor({ value, onChange, onRun, tables }) {
         language.current.of(sqlLanguage(tables)),
         syntaxHighlighting(highlight),
         theme,
+        EditorView.lineWrapping,
         EditorView.updateListener.of((u) => {
           if (u.docChanged) handlers.current.onChange?.(u.state.doc.toString());
         }),

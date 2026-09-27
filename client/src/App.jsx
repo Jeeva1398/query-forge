@@ -2,9 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { db } from './db/client.js';
 import { DATASETS, findDataset } from './data/samples/index.js';
 import { load, save } from './lib/storage.js';
-import SqlEditor from './components/SqlEditor.jsx';
-import ResultTable from './components/ResultTable.jsx';
-import SchemaBrowser from './components/SchemaBrowser.jsx';
+import Generator from './pages/Generator.jsx';
 
 export default function App() {
   const [datasetId, setDatasetId] = useState(
@@ -12,10 +10,10 @@ export default function App() {
   );
   const [sql, setSql] = useState(() => findDataset(datasetId).starter);
   const [tables, setTables] = useState(null);
-  const [result, setResult] = useState(null);
-  const [error, setError] = useState(null);
-  const [running, setRunning] = useState(false);
   const [dbReady, setDbReady] = useState(false);
+  const [dbError, setDbError] = useState(null);
+  // bumped on every (re)load so the pages start fresh
+  const [loadCount, setLoadCount] = useState(0);
 
   const refreshSchema = useCallback(async () => {
     const { tables } = await db.schema();
@@ -27,7 +25,7 @@ export default function App() {
       db
         .reset(findDataset(id).seed)
         .then(refreshSchema)
-        .catch(setError)
+        .catch(setDbError)
         .finally(() => setDbReady(true)),
     [refreshSchema],
   );
@@ -40,8 +38,8 @@ export default function App() {
 
   function loadDataset(id) {
     setDbReady(false);
-    setResult(null);
-    setError(null);
+    setDbError(null);
+    setLoadCount((n) => n + 1);
     seed(id);
   }
 
@@ -50,34 +48,6 @@ export default function App() {
     setSql(findDataset(id).starter);
     setDatasetId(id);
     loadDataset(id);
-  }
-
-  const run = useCallback(
-    async (text) => {
-      const query = (text ?? '').trim();
-      if (!query) return;
-      setRunning(true);
-      setError(null);
-      try {
-        const res = await db.run(query);
-        setResult(res);
-        // anything other than a plain SELECT may have changed tables or row counts
-        if (res.command !== 'SELECT' || res.statements > 1)
-          await refreshSchema();
-      } catch (err) {
-        setResult(null);
-        setError(err);
-      } finally {
-        setRunning(false);
-      }
-    },
-    [refreshSchema],
-  );
-
-  function queryTable(name) {
-    const text = `SELECT *\nFROM ${name}\nLIMIT 50;\n`;
-    setSql(text);
-    run(text);
   }
 
   return (
@@ -113,33 +83,21 @@ export default function App() {
         </div>
       </header>
 
-      <div className="layout">
-        <SchemaBrowser tables={tables} onPick={queryTable} />
+      {dbError && (
+        <div className="error">
+          Could not load the dataset: {dbError.message}
+        </div>
+      )}
 
-        <main className="workspace">
-          <section className="panel">
-            <SqlEditor
-              value={sql}
-              onChange={setSql}
-              onRun={run}
-              tables={tables}
-            />
-            <div className="toolbar">
-              <button
-                type="button"
-                className="primary"
-                onClick={() => run(sql)}
-                disabled={!dbReady || running}
-              >
-                Run
-              </button>
-              <span className="muted">Ctrl+Enter</span>
-            </div>
-          </section>
-
-          <ResultTable result={result} error={error} running={running} />
-        </main>
-      </div>
+      <Generator
+        key={loadCount}
+        dataset={findDataset(datasetId)}
+        tables={tables}
+        dbReady={dbReady}
+        refreshSchema={refreshSchema}
+        sql={sql}
+        setSql={setSql}
+      />
     </div>
   );
 }

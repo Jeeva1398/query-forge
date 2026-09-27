@@ -91,16 +91,30 @@ const KEYS_SQL = `
     ON fatt.attrelid = con.confrelid AND fatt.attnum = con.confkey[k.pos]
   WHERE ns.nspname = 'public' AND con.contype IN ('p', 'f')`;
 
+// CHECK and UNIQUE constraints, e.g. the allowed values of orders.status
+const CONSTRAINTS_SQL = `
+  SELECT rel.relname AS table_name, pg_get_constraintdef(con.oid) AS def
+  FROM pg_constraint con
+  JOIN pg_class rel ON rel.oid = con.conrelid
+  JOIN pg_namespace ns ON ns.oid = rel.relnamespace
+  WHERE ns.nspname = 'public' AND con.contype IN ('c', 'u')
+  ORDER BY rel.relname, con.conname`;
+
 async function schema() {
-  const [cols, keys] = await Promise.all([
+  const [cols, keys, constraints] = await Promise.all([
     db.query(COLUMNS_SQL),
     db.query(KEYS_SQL),
+    db.query(CONSTRAINTS_SQL),
   ]);
 
   const tables = new Map();
   for (const c of cols.rows) {
     if (!tables.has(c.table_name)) {
-      tables.set(c.table_name, { name: c.table_name, columns: [] });
+      tables.set(c.table_name, {
+        name: c.table_name,
+        columns: [],
+        constraints: [],
+      });
     }
     tables.get(c.table_name).columns.push({
       name: c.column_name,
@@ -116,6 +130,10 @@ async function schema() {
     if (!col) continue;
     if (k.kind === 'p') col.pk = true;
     else col.fk = { table: k.ref_table, column: k.ref_column };
+  }
+
+  for (const c of constraints.rows) {
+    tables.get(c.table_name)?.constraints.push(c.def);
   }
 
   for (const table of tables.values()) {

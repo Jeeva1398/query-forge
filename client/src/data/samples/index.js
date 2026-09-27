@@ -5,6 +5,11 @@ import library from './library.sql?raw';
 export const DATASETS = [
   {
     id: 'ecommerce',
+    examples: [
+      'customers who never placed an order',
+      'monthly revenue from delivered orders',
+      'top 3 products per category by revenue',
+    ],
     label: 'E-commerce',
     seed: ecommerce,
     starter: `-- Top 5 customers by money spent on delivered orders
@@ -20,6 +25,11 @@ LIMIT 5;
   },
   {
     id: 'hr',
+    examples: [
+      'average salary per department',
+      'employees who earn more than their manager',
+      'full management chain for every employee',
+    ],
     label: 'HR',
     seed: hr,
     starter: `-- Each employee with their manager
@@ -33,6 +43,11 @@ ORDER BY e.id;
   },
   {
     id: 'library',
+    examples: [
+      'most borrowed books',
+      'members with overdue loans',
+      "each member's longest loan",
+    ],
     label: 'Library',
     seed: library,
     starter: `-- Loans that are still out and overdue
@@ -46,6 +61,7 @@ ORDER BY l.due_on;
   },
   {
     id: 'empty',
+    examples: ['create a table for a to-do list with some rows'],
     label: 'Empty database',
     seed: '',
     starter: `CREATE TABLE notes (id serial PRIMARY KEY, body text NOT NULL);
