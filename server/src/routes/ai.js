@@ -3,9 +3,11 @@ import rateLimit from 'express-rate-limit';
 import { z } from 'zod';
 import { callLLM } from '../llm.js';
 import { pickTier } from '../router.js';
-import { generateOut } from '../schemas.js';
+import { explainOut, fixOut, generateOut } from '../schemas.js';
 import { dialectNames } from '../prompts/dialects.js';
 import { generatePrompt } from '../prompts/generate.js';
+import { fixPrompt } from '../prompts/fix.js';
+import { explainPrompt } from '../prompts/explain.js';
 
 const router = Router();
 
@@ -22,6 +24,11 @@ const aiLimiter = rateLimit({
 
 const dialect = z.enum(dialectNames).default('postgres');
 const ddl = z.string().max(30_000, 'The schema is too large to send.');
+const sql = z
+  .string()
+  .trim()
+  .min(1, 'There is no query to work with.')
+  .max(20_000, 'The query is too long.');
 
 const generateIn = z.object({
   dialect,
@@ -32,6 +39,17 @@ const generateIn = z.object({
     .min(3, 'Describe what you want in a few words.')
     .max(1000, 'Keep the request under 1000 characters.'),
 });
+
+const fixIn = z.object({
+  dialect,
+  ddl,
+  sql,
+  error: z.string().trim().min(1).max(2000),
+  request: z.string().trim().max(1000).optional(),
+  attempt: z.number().int().min(1).max(5).default(1),
+});
+
+const explainIn = z.object({ dialect, ddl, sql });
 
 // validates the body, then hands the parsed input to the route
 function handle(schema, fn) {
@@ -66,6 +84,43 @@ router.post(
       score,
       ...generatePrompt(input),
       schema: generateOut,
+    });
+  }),
+);
+
+router.post(
+  '/fix',
+  aiLimiter,
+  handle(fixIn, (input) => {
+    const { tier, score } = pickTier('fix', {
+      attempt: input.attempt,
+      sql: input.sql,
+      ddl: input.ddl,
+    });
+    return callLLM({
+      route: 'fix',
+      tier,
+      score,
+      ...fixPrompt(input),
+      schema: fixOut,
+    });
+  }),
+);
+
+router.post(
+  '/explain',
+  aiLimiter,
+  handle(explainIn, (input) => {
+    const { tier, score } = pickTier('explain', {
+      sql: input.sql,
+      ddl: input.ddl,
+    });
+    return callLLM({
+      route: 'explain',
+      tier,
+      score,
+      ...explainPrompt(input),
+      schema: explainOut,
     });
   }),
 );

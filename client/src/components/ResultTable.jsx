@@ -13,7 +13,7 @@ function summary(result) {
   return `${result.command || 'OK'}${affected} · ${time}`;
 }
 
-export default function ResultTable({ result, error, running }) {
+export default function ResultTable({ result, error, running, onFix, fixing }) {
   if (running) return <div className="results muted">Running…</div>;
 
   if (error) {
@@ -26,6 +26,13 @@ export default function ResultTable({ result, error, running }) {
           {error.hint && <div>Hint: {error.hint}</div>}
           {error.position && (
             <div className="muted">at character {error.position}</div>
+          )}
+          {onFix && (
+            <div className="error-actions">
+              <button type="button" onClick={onFix} disabled={fixing}>
+                {fixing ? 'Fixing…' : 'Fix it with AI'}
+              </button>
+            </div>
           )}
         </div>
       </div>

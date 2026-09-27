@@ -7,6 +7,7 @@ import SqlEditor from '../components/SqlEditor.jsx';
 import ResultTable from '../components/ResultTable.jsx';
 import SchemaBrowser from '../components/SchemaBrowser.jsx';
 import TierBadge from '../components/TierBadge.jsx';
+import ExplainPanel from '../components/ExplainPanel.jsx';
 
 function aiErrorText(err) {
   if (err.retryAfter && ['ai_quota', 'ai_busy'].includes(err.code)) {
@@ -28,6 +29,10 @@ export default function Generator({
   const [aiBusy, setAiBusy] = useState(false);
   const [aiError, setAiError] = useState(null);
   const [answer, setAnswer] = useState(null);
+  const [fixing, setFixing] = useState(false);
+  // how many fixes in a row; the second one goes to the stronger model
+  const [fixCount, setFixCount] = useState(0);
+  const [explain, setExplain] = useState(null);
 
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
@@ -37,6 +42,7 @@ export default function Generator({
   const execute = useCallback(
     async (text) => {
       setPending(null);
+      setExplain(null);
       setRunning(true);
       setError(null);
       try {
@@ -80,6 +86,7 @@ export default function Generator({
         prompt: request,
       });
       setAnswer({ kind: 'generate', prompt: request, ...res });
+      setFixCount(0);
       setSql(res.data.sql);
       if (isReadOnly(res.data.sql)) execute(res.data.sql);
       else {
@@ -91,6 +98,70 @@ export default function Generator({
     } finally {
       setAiBusy(false);
     }
+  }
+
+  // error text as Postgres reports it, for the AI and for the answer card
+  function errorText(err) {
+    return [
+      err.code && `ERROR ${err.code}:`,
+      err.message,
+      err.detail && `DETAIL: ${err.detail}`,
+      err.hint && `HINT: ${err.hint}`,
+      err.position && `(at character ${err.position})`,
+    ]
+      .filter(Boolean)
+      .join(' ');
+  }
+
+  async function fix() {
+    if (!error || fixing) return;
+    const broken = sql;
+    setFixing(true);
+    try {
+      const res = await post('/fix', {
+        dialect: 'postgres',
+        ddl: schemaToDdl(tables),
+        sql: broken,
+        error: errorText(error),
+        request: answer?.kind === 'generate' ? answer.prompt : undefined,
+        attempt: fixCount + 1,
+      });
+      setFixCount((n) => n + 1);
+      setAnswer({
+        kind: 'fix',
+        prompt: answer?.prompt,
+        data: { explanation: res.data.whatWasWrong, assumptions: [] },
+        meta: res.meta,
+      });
+      setSql(res.data.sql);
+      if (isReadOnly(res.data.sql)) execute(res.data.sql);
+      else setError(null);
+    } catch (err) {
+      setAiError(err);
+    } finally {
+      setFixing(false);
+    }
+  }
+
+  async function explainQuery() {
+    const query = sql.trim();
+    if (!query) return;
+    setExplain({ loading: true });
+    const [ai, plan] = await Promise.allSettled([
+      post('/explain', {
+        dialect: 'postgres',
+        ddl: schemaToDdl(tables),
+        sql: query,
+      }),
+      db.explain(query),
+    ]);
+    setExplain({
+      loading: false,
+      ai: ai.status === 'fulfilled' ? ai.value : null,
+      aiError: ai.status === 'rejected' ? ai.reason : null,
+      plan: plan.status === 'fulfilled' ? plan.value.plan : null,
+      planError: plan.status === 'rejected' ? plan.reason : null,
+    });
   }
 
   function queryTable(name) {
@@ -149,7 +220,9 @@ export default function Generator({
         {answer && (
           <section className="panel answer">
             <div className="answer-head">
-              <strong>{answer.prompt}</strong>
+              <strong>
+                {answer.kind === 'fix' ? 'Fixed the query' : answer.prompt}
+              </strong>
               <TierBadge meta={answer.meta} />
             </div>
             <p>{answer.data.explanation}</p>
@@ -180,8 +253,20 @@ export default function Generator({
               Run
             </button>
             <span className="muted">Ctrl+Enter</span>
+            <button
+              type="button"
+              className="push-right"
+              onClick={explainQuery}
+              disabled={!dbReady || !sql.trim() || explain?.loading}
+            >
+              {explain?.loading ? 'Explaining…' : 'Explain'}
+            </button>
           </div>
         </section>
+
+        {explain && (
+          <ExplainPanel explain={explain} onClose={() => setExplain(null)} />
+        )}
 
         {pending && (
           <div className="confirm" role="alertdialog">
@@ -213,7 +298,13 @@ export default function Generator({
           </div>
         )}
 
-        <ResultTable result={result} error={error} running={running} />
+        <ResultTable
+          result={result}
+          error={error}
+          running={running}
+          onFix={error ? fix : undefined}
+          fixing={fixing}
+        />
       </main>
     </div>
   );
