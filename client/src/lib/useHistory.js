@@ -17,14 +17,18 @@ export function useHistory() {
     });
   }, []);
 
-  // the same query on the same dataset is kept once, moved to the top;
+  // the same query on the same dataset and dialect is kept once, moved to the top;
   // an AI prompt attached earlier is kept when the query is re-run by hand
   const add = useCallback(
     (entry) =>
       update((prev) => {
         const key = normalize(entry.sql);
+        const dialect = entry.dialect || 'postgres';
         const existing = prev.find(
-          (e) => e.dataset === entry.dataset && normalize(e.sql) === key,
+          (e) =>
+            e.dataset === entry.dataset &&
+            (e.dialect || 'postgres') === dialect &&
+            normalize(e.sql) === key,
         );
         const merged = {
           ...existing,

@@ -1,6 +1,9 @@
 import ecommerce from './ecommerce.sql?raw';
 import hr from './hr.sql?raw';
 import library from './library.sql?raw';
+import ecommerceLite from './sqlite/ecommerce.sql?raw';
+import hrLite from './sqlite/hr.sql?raw';
+import libraryLite from './sqlite/library.sql?raw';
 
 export const DATASETS = [
   {
@@ -12,6 +15,7 @@ export const DATASETS = [
     ],
     label: 'E-commerce',
     seed: ecommerce,
+    sqliteSeed: ecommerceLite,
     starter: `-- Top 5 customers by money spent on delivered orders
 SELECT c.first_name, c.last_name, sum(oi.quantity * oi.unit_price) AS total_spent
 FROM customers c
@@ -32,6 +36,7 @@ LIMIT 5;
     ],
     label: 'HR',
     seed: hr,
+    sqliteSeed: hrLite,
     starter: `-- Each employee with their manager
 SELECT e.first_name || ' ' || e.last_name AS employee,
        e.job_title,
@@ -50,12 +55,13 @@ ORDER BY e.id;
     ],
     label: 'Library',
     seed: library,
+    sqliteSeed: libraryLite,
     starter: `-- Loans that are still out and overdue
 SELECT m.name AS member, b.title, l.due_on
 FROM loans l
 JOIN books b ON b.id = l.book_id
 JOIN members m ON m.id = l.member_id
-WHERE l.returned_on IS NULL AND l.due_on < DATE '2026-09-01'
+WHERE l.returned_on IS NULL AND l.due_on < '2026-09-01'
 ORDER BY l.due_on;
 `,
   },
@@ -64,6 +70,7 @@ ORDER BY l.due_on;
     examples: ['create a table for a to-do list with some rows'],
     label: 'Empty database',
     seed: '',
+    sqliteSeed: '',
     starter: `CREATE TABLE notes (id serial PRIMARY KEY, body text NOT NULL);
 INSERT INTO notes (body) VALUES ('hello'), ('world');
 SELECT * FROM notes;

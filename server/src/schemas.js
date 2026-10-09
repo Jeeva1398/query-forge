@@ -14,6 +14,12 @@ export const fixOut = z.object({
   whatWasWrong: z.string().min(1),
 });
 
+export const convertOut = z.object({
+  sql: z.string().min(1),
+  summary: z.string().min(1),
+  changes: z.array(z.string()),
+});
+
 export const explainOut = z.object({
   steps: z
     .array(z.object({ part: z.string(), explanation: z.string() }))

@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react';
 import { EditorView, basicSetup } from 'codemirror';
 import { keymap } from '@codemirror/view';
 import { Compartment, Prec } from '@codemirror/state';
-import { sql, PostgreSQL } from '@codemirror/lang-sql';
+import { sql, MySQL, PostgreSQL, SQLite } from '@codemirror/lang-sql';
 import { HighlightStyle, syntaxHighlighting } from '@codemirror/language';
 import { tags as t } from '@lezer/highlight';
 
@@ -40,14 +40,22 @@ function toCompletionSchema(tables) {
   );
 }
 
-const sqlLanguage = (tables) =>
+const DIALECTS = { postgres: PostgreSQL, mysql: MySQL, sqlite: SQLite };
+
+const sqlLanguage = (tables, dialect) =>
   sql({
-    dialect: PostgreSQL,
+    dialect: DIALECTS[dialect] || PostgreSQL,
     upperCaseKeywords: true,
     schema: toCompletionSchema(tables),
   });
 
-export default function SqlEditor({ value, onChange, onRun, tables }) {
+export default function SqlEditor({
+  value,
+  onChange,
+  onRun,
+  tables,
+  dialect = 'postgres',
+}) {
   const host = useRef(null);
   const language = useRef(new Compartment());
   const view = useRef(null);
@@ -74,7 +82,7 @@ export default function SqlEditor({ value, onChange, onRun, tables }) {
           ]),
         ),
         basicSetup,
-        language.current.of(sqlLanguage(tables)),
+        language.current.of(sqlLanguage(tables, dialect)),
         syntaxHighlighting(highlight),
         theme,
         EditorView.lineWrapping,
@@ -100,9 +108,9 @@ export default function SqlEditor({ value, onChange, onRun, tables }) {
 
   useEffect(() => {
     view.current?.dispatch({
-      effects: language.current.reconfigure(sqlLanguage(tables)),
+      effects: language.current.reconfigure(sqlLanguage(tables, dialect)),
     });
-  }, [tables]);
+  }, [tables, dialect]);
 
   return <div className="editor" ref={host} />;
 }

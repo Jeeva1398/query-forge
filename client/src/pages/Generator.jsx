@@ -1,13 +1,16 @@
 import { useCallback, useState } from 'react';
-import { db } from '../db/client.js';
+import { db, sqlite } from '../db/client.js';
 import { post } from '../lib/api.js';
 import { schemaToDdl } from '../lib/ddl.js';
+import { DIALECTS, findDialect } from '../lib/dialects.js';
 import { dangerousStatements, isReadOnly } from '../lib/sqlSafety.js';
 import SqlEditor from '../components/SqlEditor.jsx';
 import ResultTable from '../components/ResultTable.jsx';
 import SchemaBrowser from '../components/SchemaBrowser.jsx';
 import TierBadge from '../components/TierBadge.jsx';
 import ExplainPanel from '../components/ExplainPanel.jsx';
+
+const CLIENTS = { postgres: db, sqlite };
 
 function aiErrorText(err) {
   if (err.retryAfter && ['ai_quota', 'ai_busy'].includes(err.code)) {
@@ -17,11 +20,20 @@ function aiErrorText(err) {
   return err.message;
 }
 
+function answerTitle(answer) {
+  if (answer.kind === 'fix') return 'Fixed the query';
+  if (answer.kind === 'convert')
+    return `Converted to ${findDialect(answer.to).label}`;
+  return answer.prompt;
+}
+
 export default function Generator({
   dataset,
   tables,
   dbReady,
-  refreshSchema,
+  dialect,
+  onDialect,
+  engine,
   sql,
   setSql,
   onHistory,
@@ -34,28 +46,43 @@ export default function Generator({
   // how many fixes in a row; the second one goes to the stronger model
   const [fixCount, setFixCount] = useState(0);
   const [explain, setExplain] = useState(null);
+  const [converting, setConverting] = useState(false);
+  const [copied, setCopied] = useState(false);
 
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
   const [running, setRunning] = useState(false);
   const [pending, setPending] = useState(null);
 
+  const current = findDialect(dialect);
+  // the AI always sees the Postgres schema, whatever the dialect
+  const ddl = () => schemaToDdl(tables);
+
   const execute = useCallback(
     // meta: the prompt and model when the query came from the AI
-    async (text, meta = {}) => {
+    // target: the dialect to run on, when it differs from the one shown now
+    async (text, meta = {}, target = dialect) => {
       setPending(null);
       setExplain(null);
       setRunning(true);
       setError(null);
       try {
-        const res = await db.run(text);
+        const res = await CLIENTS[target].run(text);
         setResult(res);
         const { skipHistory, ...info } = meta;
         if (!skipHistory)
-          onHistory({ dataset: dataset.id, sql: text, ...info });
+          onHistory({
+            dataset: dataset.id,
+            dialect: target,
+            sql: text,
+            ...info,
+          });
         // anything other than a plain SELECT may have changed tables or row counts
-        if (res.command !== 'SELECT' || res.statements > 1) {
-          await refreshSchema();
+        if (
+          (res.command !== 'SELECT' || res.statements > 1) &&
+          target === dialect
+        ) {
+          await engine?.refresh();
         }
       } catch (err) {
         setResult(null);
@@ -64,7 +91,7 @@ export default function Generator({
         setRunning(false);
       }
     },
-    [refreshSchema, onHistory, dataset.id],
+    [engine, onHistory, dataset.id, dialect],
   );
 
   const run = useCallback(
@@ -78,6 +105,38 @@ export default function Generator({
     [execute],
   );
 
+  const copy = useCallback(async (text) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      // clipboard blocked; the user can still select the text by hand
+    }
+  }, []);
+
+  // results and errors belong to the old engine, so they're cleared
+  function changeDialect(id) {
+    if (id === dialect) return;
+    setResult(null);
+    setError(null);
+    setExplain(null);
+    setPending(null);
+    setFixCount(0);
+    onDialect(id);
+  }
+
+  // runs AI output right away when it only reads and the dialect can run
+  function afterAi(text, meta, target = dialect) {
+    if (findDialect(target).canRun && isReadOnly(text)) {
+      execute(text, meta, target);
+    } else {
+      onHistory({ dataset: dataset.id, dialect: target, sql: text, ...meta });
+      setResult(null);
+      setError(null);
+    }
+  }
+
   async function generate(text = prompt) {
     const request = text.trim();
     if (!request || aiBusy) return;
@@ -86,24 +145,18 @@ export default function Generator({
     setAiError(null);
     try {
       const res = await post('/generate', {
-        dialect: 'postgres',
-        ddl: schemaToDdl(tables),
+        dialect,
+        ddl: ddl(),
         prompt: request,
       });
       setAnswer({ kind: 'generate', prompt: request, ...res });
       setFixCount(0);
       setSql(res.data.sql);
-      const meta = {
+      afterAi(res.data.sql, {
         prompt: request,
         model: res.meta.model,
         tier: res.meta.tier,
-      };
-      if (isReadOnly(res.data.sql)) execute(res.data.sql, meta);
-      else {
-        onHistory({ dataset: dataset.id, sql: res.data.sql, ...meta });
-        setResult(null);
-        setError(null);
-      }
+      });
     } catch (err) {
       setAiError(err);
     } finally {
@@ -111,7 +164,7 @@ export default function Generator({
     }
   }
 
-  // error text as Postgres reports it, for the AI and for the answer card
+  // error text as the database reports it, for the AI and for the answer card
   function errorText(err) {
     return [
       err.code && `ERROR ${err.code}:`,
@@ -130,8 +183,8 @@ export default function Generator({
     setFixing(true);
     try {
       const res = await post('/fix', {
-        dialect: 'postgres',
-        ddl: schemaToDdl(tables),
+        dialect,
+        ddl: ddl(),
         sql: broken,
         error: errorText(error),
         request: answer?.kind === 'generate' ? answer.prompt : undefined,
@@ -159,17 +212,56 @@ export default function Generator({
     }
   }
 
+  async function convert(to) {
+    const query = sql.trim();
+    if (!to || !query || converting) return;
+    setConverting(true);
+    setAiError(null);
+    try {
+      const res = await post('/convert', {
+        from: dialect,
+        to,
+        ddl: ddl(),
+        sql: query,
+      });
+      changeDialect(to);
+      setAnswer({
+        kind: 'convert',
+        to,
+        prompt: answer?.prompt,
+        data: {
+          explanation: res.data.summary,
+          assumptions: res.data.changes,
+        },
+        meta: res.meta,
+      });
+      setFixCount(0);
+      setSql(res.data.sql);
+      afterAi(
+        res.data.sql,
+        { prompt: answer?.prompt, model: res.meta.model, tier: res.meta.tier },
+        to,
+      );
+    } catch (err) {
+      setAiError(err);
+    } finally {
+      setConverting(false);
+    }
+  }
+
   async function explainQuery() {
     const query = sql.trim();
     if (!query) return;
     setExplain({ loading: true });
     const [ai, plan] = await Promise.allSettled([
-      post('/explain', {
-        dialect: 'postgres',
-        ddl: schemaToDdl(tables),
-        sql: query,
-      }),
-      db.explain(query),
+      post('/explain', { dialect, ddl: ddl(), sql: query }),
+      engine
+        ? engine.db.explain(query)
+        : Promise.reject(
+            new Error(
+              "MySQL can't run in the browser, so there is no query plan to show.",
+            ),
+          ),
     ]);
     setExplain({
       loading: false,
@@ -183,12 +275,15 @@ export default function Generator({
   function queryTable(name) {
     const text = `SELECT *\nFROM ${name}\nLIMIT 50;\n`;
     setSql(text);
-    execute(text, { skipHistory: true });
+    if (engine) execute(text, { skipHistory: true });
   }
 
   return (
     <div className="layout">
-      <SchemaBrowser tables={tables} onPick={queryTable} />
+      <SchemaBrowser
+        tables={engine ? engine.tables : tables}
+        onPick={queryTable}
+      />
 
       <main className="workspace">
         <section className="panel ask">
@@ -207,6 +302,24 @@ export default function Generator({
             aria-label="Describe the query you want"
           />
           <div className="toolbar">
+            <div
+              className="segmented"
+              role="radiogroup"
+              aria-label="SQL dialect"
+            >
+              {DIALECTS.map((d) => (
+                <button
+                  key={d.id}
+                  type="button"
+                  role="radio"
+                  aria-checked={d.id === dialect}
+                  className={d.id === dialect ? 'active' : undefined}
+                  onClick={() => changeDialect(d.id)}
+                >
+                  {d.label}
+                </button>
+              ))}
+            </div>
             <button
               type="button"
               className="primary"
@@ -236,9 +349,7 @@ export default function Generator({
         {answer && (
           <section className="panel answer">
             <div className="answer-head">
-              <strong>
-                {answer.kind === 'fix' ? 'Fixed the query' : answer.prompt}
-              </strong>
+              <strong>{answerTitle(answer)}</strong>
               <TierBadge meta={answer.meta} />
             </div>
             <p>{answer.data.explanation}</p>
@@ -256,22 +367,49 @@ export default function Generator({
           <SqlEditor
             value={sql}
             onChange={setSql}
-            onRun={run}
-            tables={tables}
+            onRun={engine ? run : copy}
+            tables={engine ? engine.tables : tables}
+            dialect={dialect}
           />
           <div className="toolbar">
-            <button
-              type="button"
-              className="primary"
-              onClick={() => run(sql)}
-              disabled={!dbReady || running}
-            >
-              Run
-            </button>
+            {engine ? (
+              <button
+                type="button"
+                className="primary"
+                onClick={() => run(sql)}
+                disabled={!engine.ready || running}
+              >
+                Run
+              </button>
+            ) : (
+              <button
+                type="button"
+                className="primary"
+                onClick={() => copy(sql)}
+                disabled={!sql.trim()}
+              >
+                {copied ? 'Copied' : 'Copy'}
+              </button>
+            )}
             <span className="muted">Ctrl+Enter</span>
+            <select
+              className="push-right"
+              value=""
+              onChange={(e) => convert(e.target.value)}
+              disabled={!dbReady || !sql.trim() || converting}
+              aria-label="Convert the query to another dialect"
+            >
+              <option value="">
+                {converting ? 'Converting…' : 'Convert to…'}
+              </option>
+              {DIALECTS.filter((d) => d.id !== dialect).map((d) => (
+                <option key={d.id} value={d.id}>
+                  {d.label}
+                </option>
+              ))}
+            </select>
             <button
               type="button"
-              className="push-right"
               onClick={explainQuery}
               disabled={!dbReady || !sql.trim() || explain?.loading}
             >
@@ -281,7 +419,11 @@ export default function Generator({
         </section>
 
         {explain && (
-          <ExplainPanel explain={explain} onClose={() => setExplain(null)} />
+          <ExplainPanel
+            explain={explain}
+            dialect={dialect}
+            onClose={() => setExplain(null)}
+          />
         )}
 
         {pending && (
@@ -314,13 +456,21 @@ export default function Generator({
           </div>
         )}
 
-        <ResultTable
-          result={result}
-          error={error}
-          running={running}
-          onFix={error ? fix : undefined}
-          fixing={fixing}
-        />
+        {engine ? (
+          <ResultTable
+            result={result}
+            error={error}
+            running={running}
+            onFix={error ? fix : undefined}
+            fixing={fixing}
+          />
+        ) : (
+          <div className="results muted">
+            {current.label} can't run in the browser, so this query isn't
+            executed here. Copy it into your own MySQL 8 server, or pick
+            PostgreSQL or SQLite to try it on the sample data.
+          </div>
+        )}
       </main>
     </div>
   );

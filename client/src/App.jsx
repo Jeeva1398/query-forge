@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useState } from 'react';
-import { db } from './db/client.js';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { db, sqlite } from './db/client.js';
 import { DATASETS, findDataset } from './data/samples/index.js';
+import { findDialect } from './lib/dialects.js';
 import { load, save } from './lib/storage.js';
 import { useHistory } from './lib/useHistory.js';
 import Generator from './pages/Generator.jsx';
@@ -17,6 +18,13 @@ export default function App() {
   // bumped on every (re)load so the pages start fresh
   const [loadCount, setLoadCount] = useState(0);
   const [page, setPage] = useState('generator');
+  const [dialect, setDialect] = useState(
+    () => findDialect(load('dialect', 'postgres')).id,
+  );
+  // the SQLite copy of the dataset, seeded the first time SQLite is used
+  // after each load, so Postgres-only users never download the engine
+  const [liteTables, setLiteTables] = useState(null);
+  const liteLoad = useRef(null);
   const history = useHistory();
 
   const refreshSchema = useCallback(async () => {
@@ -34,31 +42,90 @@ export default function App() {
     [refreshSchema],
   );
 
+  const refreshLite = useCallback(async () => {
+    const { tables } = await sqlite.schema();
+    setLiteTables(tables);
+  }, []);
+
+  // liteTables stays null (loading) until the reset and schema read finish
+  function startLite(id, count) {
+    liteLoad.current = count;
+    sqlite
+      .reset(findDataset(id).sqliteSeed)
+      .then(refreshLite)
+      .catch((err) => {
+        setDbError(err);
+        setLiteTables([]);
+      });
+  }
+
+  function seedLite(id, count) {
+    setLiteTables(null);
+    startLite(id, count);
+  }
+
   // first load only; later loads come from the dataset picker and Reset
   useEffect(() => {
     seed(datasetId);
+    if (dialect === 'sqlite') startLite(datasetId, loadCount);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  function loadDataset(id) {
+  // forDialect: the dialect that will be active once this load finishes
+  function loadDataset(id, forDialect = dialect) {
     setDbReady(false);
     setDbError(null);
     setLoadCount((n) => n + 1);
     seed(id);
+    if (forDialect === 'sqlite') seedLite(id, loadCount + 1);
   }
 
-  function pickDataset(id) {
+  function pickDialect(id, { seedNow = true } = {}) {
+    save('dialect', id);
+    setDialect(id);
+    if (seedNow && id === 'sqlite' && liteLoad.current !== loadCount) {
+      seedLite(datasetId, loadCount);
+    }
+  }
+
+  function pickDataset(id, forDialect) {
     save('dataset', id);
     setSql(findDataset(id).starter);
     setDatasetId(id);
-    loadDataset(id);
+    loadDataset(id, forDialect);
   }
 
   function openFromHistory(entry) {
-    if (entry.dataset !== datasetId) pickDataset(entry.dataset);
+    const entryDialect = findDialect(entry.dialect).id;
+    if (entry.dataset !== datasetId) {
+      pickDialect(entryDialect, { seedNow: false });
+      pickDataset(entry.dataset, entryDialect);
+    } else {
+      pickDialect(entryDialect);
+    }
     setSql(entry.sql);
     setPage('generator');
   }
+
+  // the engine queries run on; MySQL has none, and Postgres still
+  // provides the schema the AI sees for every dialect
+  const engine = {
+    postgres: { db, tables, ready: dbReady, refresh: refreshSchema },
+    sqlite: {
+      db: sqlite,
+      tables: liteTables,
+      ready: dbReady && liteTables !== null,
+      refresh: refreshLite,
+    },
+  }[dialect];
+
+  const status = !dbReady
+    ? 'Loading…'
+    : engine && !engine.ready
+      ? 'Loading SQLite…'
+      : engine
+        ? `${findDialect(dialect).short} ready`
+        : 'MySQL: generate and copy';
 
   return (
     <div className="app">
@@ -110,9 +177,7 @@ export default function App() {
           >
             Reset DB
           </button>
-          <span className="muted">
-            {dbReady ? 'Postgres ready' : 'Loading…'}
-          </span>
+          <span className="muted">{status}</span>
         </div>
       </header>
 
@@ -139,7 +204,9 @@ export default function App() {
           dataset={findDataset(datasetId)}
           tables={tables}
           dbReady={dbReady}
-          refreshSchema={refreshSchema}
+          dialect={dialect}
+          onDialect={pickDialect}
+          engine={engine}
           sql={sql}
           setSql={setSql}
         />

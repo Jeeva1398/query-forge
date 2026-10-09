@@ -61,6 +61,7 @@ export function pickTier(route, ctx = {}) {
       case 'generate':
         return score >= threshold ? 'flash' : 'lite';
       case 'explain':
+      case 'convert':
         return score >= threshold + 1 ? 'flash' : 'lite';
       case 'fix':
         return (ctx.attempt ?? 1) >= 2 ? 'flash' : 'lite';

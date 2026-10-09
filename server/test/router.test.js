@@ -110,6 +110,17 @@ describe('route defaults', () => {
     expect(pickTier('explain', ctx).tier).toBe('lite');
   });
 
+  it('convert routes like explain', () => {
+    const sql =
+      'SELECT id, rank() OVER (PARTITION BY category_id ORDER BY price) FROM products';
+    expect(pickTier('convert', { sql, threshold: 4 }).tier).toBe(
+      pickTier('explain', { sql, threshold: 4 }).tier,
+    );
+    expect(pickTier('convert', { sql: 'SELECT * FROM products' }).tier).toBe(
+      'lite',
+    );
+  });
+
   it('hints always use lite', () => {
     expect(
       pickTier('hint', { prompt: 'recursive running total rank' }).tier,

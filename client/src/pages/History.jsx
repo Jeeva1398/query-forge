@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { DATASETS, findDataset } from '../data/samples/index.js';
+import { findDialect } from '../lib/dialects.js';
 
 const rtf = new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' });
 
@@ -86,7 +87,8 @@ export default function History({ entries, onOpen, onRemove, onClear }) {
             <div className="history-head">
               <strong>{e.prompt || 'Written by hand'}</strong>
               <span className="muted">
-                {findDataset(e.dataset).label} · {timeAgo(e.at)}
+                {findDataset(e.dataset).label} · {findDialect(e.dialect).label}{' '}
+                · {timeAgo(e.at)}
                 {e.model &&
                   ` · ${e.tier === 'flash' ? '⚡ ' : ''}${e.model.replace(/^gemini-/, '')}`}
               </span>

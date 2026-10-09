@@ -606,3 +606,28 @@ button.tab.active {
 .empty {
   padding: 24px 0;
 }
+
+.segmented {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.segmented button {
+  border: none;
+  border-radius: 0;
+  padding: 5px 10px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.segmented button + button {
+  border-left: 1px solid var(--border);
+}
+
+.segmented button.active {
+  background: var(--accent);
+  color: var(--accent-fg);
+  font-weight: 600;
+}

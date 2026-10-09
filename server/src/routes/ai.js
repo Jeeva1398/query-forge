@@ -3,11 +3,12 @@ import rateLimit from 'express-rate-limit';
 import { z } from 'zod';
 import { callLLM } from '../llm.js';
 import { pickTier } from '../router.js';
-import { explainOut, fixOut, generateOut } from '../schemas.js';
+import { convertOut, explainOut, fixOut, generateOut } from '../schemas.js';
 import { dialectNames } from '../prompts/dialects.js';
 import { generatePrompt } from '../prompts/generate.js';
 import { fixPrompt } from '../prompts/fix.js';
 import { explainPrompt } from '../prompts/explain.js';
+import { convertPrompt } from '../prompts/convert.js';
 
 const router = Router();
 
@@ -50,6 +51,13 @@ const fixIn = z.object({
 });
 
 const explainIn = z.object({ dialect, ddl, sql });
+
+const convertIn = z
+  .object({ from: dialect, to: z.enum(dialectNames), ddl, sql })
+  .refine((v) => v.from !== v.to, {
+    path: ['to'],
+    message: 'Pick a different dialect to convert to.',
+  });
 
 // validates the body, then hands the parsed input to the route
 function handle(schema, fn) {
@@ -121,6 +129,24 @@ router.post(
       score,
       ...explainPrompt(input),
       schema: explainOut,
+    });
+  }),
+);
+
+router.post(
+  '/convert',
+  aiLimiter,
+  handle(convertIn, (input) => {
+    const { tier, score } = pickTier('convert', {
+      sql: input.sql,
+      ddl: input.ddl,
+    });
+    return callLLM({
+      route: 'convert',
+      tier,
+      score,
+      ...convertPrompt(input),
+      schema: convertOut,
     });
   }),
 );

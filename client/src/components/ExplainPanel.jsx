@@ -1,7 +1,22 @@
 import { useState } from 'react';
 import TierBadge from './TierBadge.jsx';
 
-export default function ExplainPanel({ explain, onClose }) {
+const PLAN_SOURCE = {
+  postgres: (
+    <>
+      From Postgres <code>EXPLAIN ANALYZE</code> (plain <code>EXPLAIN</code> for
+      queries that change data).
+    </>
+  ),
+  sqlite: (
+    <>
+      From SQLite <code>EXPLAIN QUERY PLAN</code>. SQLite shows the steps it
+      takes, without timings or row estimates.
+    </>
+  ),
+};
+
+export default function ExplainPanel({ explain, dialect, onClose }) {
   const [tab, setTab] = useState('steps');
   const { ai, aiError, plan, planError, loading } = explain;
 
@@ -65,10 +80,9 @@ export default function ExplainPanel({ explain, onClose }) {
           {planError && <div className="error">{planError.message}</div>}
           {plan && <pre className="plan">{plan}</pre>}
           {!plan && !planError && <p className="muted">Loading plan…</p>}
-          <p className="muted">
-            From Postgres <code>EXPLAIN ANALYZE</code> (plain{' '}
-            <code>EXPLAIN</code> for queries that change data).
-          </p>
+          {PLAN_SOURCE[dialect] && (
+            <p className="muted">{PLAN_SOURCE[dialect]}</p>
+          )}
         </div>
       )}
     </section>
